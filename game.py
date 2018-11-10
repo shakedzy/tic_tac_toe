@@ -1,16 +1,28 @@
+import numpy as np
 import matplotlib.pyplot as plt
+import players, dqn
 
 
 class Game:
-    board = [0] * 9
+    board = np.zeros(9)
     current_player = 1
+    player1 = players.Player(None)
+    player2 = players.Player(None)
 
-    def __init__(self):
+    def __init__(self, player1, player2):
+        self.player1 = player1
+        self.player2 = player2
         self.reset()
 
     def reset(self):
-        self.board = [0] * 9
+        self.board = np.zeros(9)
         self.current_player = 1
+
+    def active_player(self):
+        if self.current_player == 1:
+            return self.player1
+        else:
+            return self.player2
 
     def play(self, cell):
         if self.board[cell] != 0:
@@ -100,8 +112,26 @@ class Game:
                 row = ' '
 
 
-game = Game()
-game.board = [1,-1,0,1,0,0,-1,-1,-1]
+p1 = players.Human('p1')
+p2 = players.Human('p2')
+game = Game(p1,p2)
+memory = dqn.ReplayMemory(10000)
+while not game.game_status()['game_over']:
+    if isinstance(game.active_player(), players.Human):
+        game.print_board()
+        print("{}'s turn:".format(game.active_player().name))
+    state = game.board
+    action = int(game.active_player().select_cell(game.board))
+    reward, game_over = game.play(action)
+    next_state = game.board if not game_over else None
+    state *= game.current_player
+    next_state = next_state * game.current_player if next_state is not None else None
+    reward = reward * game.current_player if game_over else reward
+    memory.append((state,action,reward,next_state))
+    game.active_player().receive_reward_and_status(reward, game_over)
+print('-------------\nGAME OVER!')
 game.print_board()
+print(game.game_status())
+
 
 

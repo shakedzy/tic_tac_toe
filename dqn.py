@@ -13,7 +13,7 @@ class QNetwork:
     cost = None
     optimizer = None
 
-    def __init__(self, session, saver, gamma=0.8, hidden_layers_size=[20,20], learning_rate=0.0003,
+    def __init__(self, session, saver, hidden_layers_size, gamma, learning_rate,
                  checkpoint_file_name='dqn.ckpt'):
         self.session = session
         self.saver = saver
@@ -58,6 +58,9 @@ class ReplayMemory:
         self.memory = deque(maxlen=size)
         if seed is not None:
             random.seed(seed)
+
+    def append(self, element):
+        self.memory.append(element)
 
     def sample(self, n):
         return random.sample(self.memory, n)
