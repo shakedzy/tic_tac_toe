@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import players, dqn
@@ -112,23 +113,24 @@ class Game:
                 row = ' '
 
 
-p1 = players.Human('p1')
-p2 = players.Human('p2')
-game = Game(p1,p2)
+logger = logging.getLogger("logger")
 memory = dqn.ReplayMemory(10000)
+p1 = players.Drunk('p1')
+p2 = players.QPlayer('Q',[20,20],0.003,0.9,100,10)
+game = Game(p1,p2)
 while not game.game_status()['game_over']:
-    if isinstance(game.active_player(), players.Human):
+    if True: #isinstance(game.active_player(), players.Human):
         game.print_board()
         print("{}'s turn:".format(game.active_player().name))
-    state = game.board
+    state = np.copy(game.board)
     action = int(game.active_player().select_cell(game.board))
     reward, game_over = game.play(action)
-    next_state = game.board if not game_over else None
+    next_state = np.copy(game.board) if not game_over else None
     state *= game.current_player
     next_state = next_state * game.current_player if next_state is not None else None
     reward = reward * game.current_player if game_over else reward
-    memory.append((state,action,reward,next_state))
-    game.active_player().receive_reward_and_status(reward, game_over)
+    memory.append({'state': state, 'action': action,
+                   'reward': reward, 'next_state': next_state})
 print('-------------\nGAME OVER!')
 game.print_board()
 print(game.game_status())
