@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
+import tensorflow as tf
 import players, dqn
 
 
@@ -113,6 +114,7 @@ class Game:
                 row = ' '
 
 
+tf.reset_default_graph()
 logger = logging.getLogger("logger")
 memory = dqn.ReplayMemory(10000)
 p1 = players.Drunk('p1')

@@ -12,6 +12,9 @@ class Player:
     def __init__(self, name):
         self.name = name
 
+    def shutdown(self):
+        pass
+
     @abstractmethod
     def select_cell(self, board, **kwargs):
         pass
@@ -43,20 +46,26 @@ class QPlayer(Player):
     logger = logging.getLogger("logger")
     qnn: dqn.QNetwork = None
     q_target: dqn.QNetwork = None
+    session: tf.Session = None
 
     learning_batch_size = 0
     batches_to_checkpoint = 0
 
     def __init__(self, name, hidden_layers_size, learning_rate, gamma, learning_batch_size, batches_to_checkpoint,
-                 **kwargs):
-        self.qnn = dqn.QNetwork(hidden_layers_size, gamma, learning_rate)
-        self.q_target = dqn.QNetwork(hidden_layers_size, gamma, learning_rate)
+                 tau=1, **kwargs):
         self.learning_batch_size = learning_batch_size
         self.batches_to_checkpoint = batches_to_checkpoint
+        self.tau = tau
+        self.session = tf.Session()
+        self.qnn = dqn.QNetwork(hidden_layers_size, gamma, learning_rate)
+        self.q_target = dqn.QNetwork(hidden_layers_size, gamma, learning_rate)
+        self.session.run(tf.global_variables_initializer())
         super(QPlayer, self).__init__(name)
 
     def select_cell(self, board, **kwargs):
-        return self.qnn.predict(board)
+        prediction = self.session.run(self.qnn.output,feed_dict={self.qnn.states:board})
+        self.logger.debug("Predicting next cell - board: %s | prediction: %s",board,prediction)
+        return prediction
 
     def learn(self, memory, **kwargs):
         self.logger.debug('Memory counter = %s',memory.counter)
@@ -65,13 +74,20 @@ class QPlayer(Player):
         else:
             self.logger.info('Initiating learning procedure')
             batch = memory.sample(self.learning_batch_size)
-            qt = self.q_target.predict(np.array(list(map(lambda x: x['next_state'], batch))))
-            cost = self.qnn.train(states=np.array(list(map(lambda x: x['state'], batch))),
-                                  r=np.array(list(map(lambda x: x['reward'], batch))),
-                                  q_target=qt)
+            qt = self.session.run(self.q_target.output,feed_dict={self.q_target.states:np.array(list(map(lambda x: x['next_state'], batch)))})
+            _, cost = self.session.run([self.qnn.optimizer, self.qnn.cost], feed_dict={self.qnn.states: np.array(list(map(lambda x: x['state'], batch))),
+                                                                                       self.qnn.r:np.array(list(map(lambda x: x['reward'], batch))),
+                                                                                       self.qnn.q_target:qt})
             self.logger.info('Q-Network cost: %s | Batch number: %s', cost, memory.counter / self.learning_batch_size)
             if memory.counter % (self.batches_to_checkpoint * self.learning_batch_size) == 0:
                 self.logger.info('Copying Q-Network to Q-Target')
-                self.qnn.save_graph()
-                self.q_target.load_graph()
+                tf_vars = tf.trainable_variables()
+                num_of_vars = len(tf_vars)
+                operations = []
+                for i,v in enumerate(tf_vars[0:num_of_vars//2]):
+                    operations.append(tf_vars[i+num_of_vars//2].assign((v.value()*self.tau) + ((1-self.tau)*tf_vars[i+num_of_vars//2].value())))
+                self.session.run(operations)
+
+    def shutdown(self):
+        self.session.close()
 
