@@ -52,10 +52,11 @@ class QPlayer(Player):
     batches_to_checkpoint = 0
 
     def __init__(self, name, hidden_layers_size, learning_rate, gamma, learning_batch_size, batches_to_checkpoint,
-                 tau=1, **kwargs):
+                 epsilon=0.01, tau=1, **kwargs):
         self.learning_batch_size = learning_batch_size
         self.batches_to_checkpoint = batches_to_checkpoint
         self.tau = tau
+        self.epsilon = epsilon
         self.session = tf.Session()
         self.qnn = dqn.QNetwork(hidden_layers_size, gamma, learning_rate)
         self.q_target = dqn.QNetwork(hidden_layers_size, gamma, learning_rate)
@@ -63,9 +64,16 @@ class QPlayer(Player):
         super(QPlayer, self).__init__(name)
 
     def select_cell(self, board, **kwargs):
-        prediction = self.session.run(self.qnn.output,feed_dict={self.qnn.states:board})
-        self.logger.debug("Predicting next cell - board: %s | prediction: %s",board,prediction)
-        return prediction
+        e = random.random()
+        if e < self.epsilon:
+            cell = random.randint(0,8)
+            self.logger.debug("Choosing random cell: %s", cell)
+        else:
+            prediction = self.session.run(self.qnn.output,feed_dict={self.qnn.states: np.expand_dims(board, axis=0)})
+            prediction = np.squeeze(prediction)
+            cell = np.argmax(prediction)
+            self.logger.debug("Predicting next cell - board: %s | prediction: %s | cell: %s", board, prediction, cell)
+        return cell
 
     def learn(self, memory, **kwargs):
         self.logger.debug('Memory counter = %s',memory.counter)

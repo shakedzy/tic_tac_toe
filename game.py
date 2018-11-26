@@ -1,4 +1,6 @@
 import logging
+import random
+from time import time
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -114,8 +116,10 @@ class Game:
                 row = ' '
 
 
+random.seed(int(time()*1000))
 tf.reset_default_graph()
 logger = logging.getLogger("logger")
+logging.basicConfig(level=logging.DEBUG, format='%(message)s')
 memory = dqn.ReplayMemory(10000)
 p1 = players.Drunk('p1')
 p2 = players.QPlayer('Q',[20,20],0.003,0.9,100,10)
