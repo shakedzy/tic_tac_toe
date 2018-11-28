@@ -121,25 +121,32 @@ tf.reset_default_graph()
 logger = logging.getLogger("logger")
 logging.basicConfig(level=logging.DEBUG, format='%(message)s')
 memory = dqn.ReplayMemory(10000)
-p1 = players.Drunk('p1')
-p2 = players.QPlayer('Q',[20,20],0.003,0.9,100,10)
+p1 = players.QPlayer('Q',[20,20],learning_rate=0.003,gamma=0.9,learning_batch_size=10,batches_to_checkpoint=10)
+p2 = players.Drunk('p1')
 game = Game(p1,p2)
-while not game.game_status()['game_over']:
-    if True: #isinstance(game.active_player(), players.Human):
-        game.print_board()
-        print("{}'s turn:".format(game.active_player().name))
-    state = np.copy(game.board)
-    action = int(game.active_player().select_cell(game.board))
-    reward, game_over = game.play(action)
-    next_state = np.copy(game.board) if not game_over else None
-    state *= game.current_player
-    next_state = next_state * game.current_player if next_state is not None else None
-    reward = reward * game.current_player if game_over else reward
-    memory.append({'state': state, 'action': action,
-                   'reward': reward, 'next_state': next_state})
-print('-------------\nGAME OVER!')
-game.print_board()
-print(game.game_status())
+for g in range(1,201):
+    game.reset()
+    print('STARTING NEW GAME (#{})\n-------------'.format(g))
+    while not game.game_status()['game_over']:
+        if isinstance(game.active_player(), players.Human):
+            game.print_board()
+            print("{}'s turn:".format(game.active_player().name))
+        state = np.copy(game.board)
+        action = int(game.active_player().select_cell(game.board))
+        reward, game_over = game.play(action)
+        next_state = np.copy(game.board) if not game_over else np.full(9,2.0)
+        state *= game.current_player
+        next_state = next_state * game.current_player if not game_over else next_state
+        reward = reward * game.current_player if game_over else reward
+        memory.append({'state': state, 'action': action,
+                       'reward': reward, 'next_state': next_state})
+        game.active_player().learn(memory)
+    print('-------------\nGAME OVER!')
+    game.print_board()
+    print(game.game_status())
+    print('-------------')
+for pp in [p1,p2]:
+    pp.shutdown()
 
 
 

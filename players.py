@@ -67,13 +67,20 @@ class QPlayer(Player):
         e = random.random()
         if e < self.epsilon:
             cell = random.randint(0,8)
-            self.logger.debug("Choosing random cell: %s", cell)
+            self.logger.debug("Choosing a random cell: %s", cell)
         else:
             prediction = self.session.run(self.qnn.output,feed_dict={self.qnn.states: np.expand_dims(board, axis=0)})
             prediction = np.squeeze(prediction)
             cell = np.argmax(prediction)
             self.logger.debug("Predicting next cell - board: %s | prediction: %s | cell: %s", board, prediction, cell)
         return cell
+
+    @staticmethod
+    def _fetch_from_batch(batch, key):
+        a = np.array(list(map(lambda x: x[key], batch)))
+        if len(a.shape) < 2:
+            a = np.expand_dims(a, axis=1)
+        return a
 
     def learn(self, memory, **kwargs):
         self.logger.debug('Memory counter = %s',memory.counter)
@@ -82,10 +89,11 @@ class QPlayer(Player):
         else:
             self.logger.info('Initiating learning procedure')
             batch = memory.sample(self.learning_batch_size)
-            qt = self.session.run(self.q_target.output,feed_dict={self.q_target.states:np.array(list(map(lambda x: x['next_state'], batch)))})
-            _, cost = self.session.run([self.qnn.optimizer, self.qnn.cost], feed_dict={self.qnn.states: np.array(list(map(lambda x: x['state'], batch))),
-                                                                                       self.qnn.r:np.array(list(map(lambda x: x['reward'], batch))),
-                                                                                       self.qnn.q_target:qt})
+            qt = self.session.run(self.q_target.output,feed_dict={self.q_target.states: self._fetch_from_batch(batch,'next_state')})
+            _, cost = self.session.run([self.qnn.optimizer, self.qnn.cost], feed_dict={self.qnn.states: self._fetch_from_batch(batch,'state'),
+                                                                                       self.qnn.r: self._fetch_from_batch(batch,'reward'),
+                                                                                       self.qnn.actions: self._fetch_from_batch(batch, 'action'),
+                                                                                       self.qnn.q_target: qt})
             self.logger.info('Q-Network cost: %s | Batch number: %s', cost, memory.counter / self.learning_batch_size)
             if memory.counter % (self.batches_to_checkpoint * self.learning_batch_size) == 0:
                 self.logger.info('Copying Q-Network to Q-Target')
