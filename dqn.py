@@ -4,20 +4,23 @@ from collections import deque
 
 
 class QNetwork:
-    def __init__(self, hidden_layers_size, gamma, learning_rate):
+    def __init__(self, hidden_layers_size, gamma, learning_rate_x):
         self.q_target = tf.placeholder(shape=(None,9), dtype=tf.float32)
         self.r = tf.placeholder(shape=(None,1),dtype=tf.float32)
         self.states = tf.placeholder(shape=(None, 9), dtype=tf.float32)
         self.actions = tf.placeholder(shape=None, dtype=tf.int32)
+        self.learning_rate = tf.placeholder(shape=[], dtype=tf.float32)
         layer = self.states
         for l in hidden_layers_size:
-            layer = tf.layers.dense(inputs=layer, units=l, activation=tf.nn.relu)
-        self.output = tf.layers.dense(inputs=layer, units=9)
+            layer = tf.layers.dense(inputs=layer, units=l, activation=tf.nn.relu,
+                                    kernel_initializer=tf.contrib.layers.xavier_initializer())
+        self.output = tf.layers.dense(inputs=layer, units=9,
+                                      kernel_initializer=tf.contrib.layers.xavier_initializer())
         self.cost = tf.reduce_mean(tf.losses.mean_squared_error(labels=self.r+(gamma*tf.reduce_max(self.q_target)),
                                                                 predictions=tf.gather(self.output,
                                                                                       indices=self.actions,
                                                                                       axis=1)))
-        self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(self.cost)
+        self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate).minimize(self.cost)
 
 
 class ReplayMemory:

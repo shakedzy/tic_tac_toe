@@ -116,15 +116,19 @@ class Game:
                 row = ' '
 
 
+y = []
+s = []
+avg_cost = 0
 random.seed(int(time()*1000))
 tf.reset_default_graph()
 logger = logging.getLogger("logger")
-logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 memory = dqn.ReplayMemory(10000)
-p1 = players.QPlayer('Q',[20,20],learning_rate=0.003,gamma=0.9,learning_batch_size=10,batches_to_checkpoint=10)
-p2 = players.Drunk('p1')
+p1 = players.QPlayer('Q',[60],learning_rate=0.0003,gamma=0.75,learning_batch_size=1000,batches_to_checkpoint=50,
+                     tau=0.95,samples_till_learning=50)
+p2 = p1 #players.Drunk('DrunkDude')
 game = Game(p1,p2)
-for g in range(1,201):
+for g in range(2000):
     game.reset()
     print('STARTING NEW GAME (#{})\n-------------'.format(g))
     while not game.game_status()['game_over']:
@@ -140,13 +144,30 @@ for g in range(1,201):
         reward = reward * game.current_player if game_over else reward
         memory.append({'state': state, 'action': action,
                        'reward': reward, 'next_state': next_state})
-        game.active_player().learn(memory)
+        x = game.active_player().learn(memory) if game.current_player == 1 else None
+        if x:
+            cost, switched = x[0], x[1]
+        else:
+            cost, switched = None, None
+        if isinstance(game.active_player(), players.QPlayer) and cost is not None:
+            avg_cost += cost
+            if memory.counter % 10 == 0:
+                y.append(avg_cost/10)
+                avg_cost = 0
+                if switched:
+                    s.append(500)
+                else:
+                    s.append(0)
     print('-------------\nGAME OVER!')
     game.print_board()
     print(game.game_status())
     print('-------------')
 for pp in [p1,p2]:
     pp.shutdown()
+print(y)
+plt.scatter(range(len(y)),y)
+plt.scatter(range(len(s)),s,c='r')
+plt.show()
 
 
 
