@@ -56,7 +56,7 @@ class QPlayer(Player):
     previous_cost = None
 
     def __init__(self, name, hidden_layers_size, learning_rate, gamma, learning_batch_size, samples_till_learning, batches_to_checkpoint,
-                 epsilon=0.01, tau=1, **kwargs):
+                 epsilon, tau, **kwargs):
         self.learning_batch_size = learning_batch_size
         self.batches_to_checkpoint = batches_to_checkpoint
         self.tau = tau
@@ -64,21 +64,28 @@ class QPlayer(Player):
         self.default_lr = learning_rate
         self.samples_till_learning = samples_till_learning
         self.session = tf.Session()
-        self.qnn = dqn.QNetwork(hidden_layers_size, gamma, learning_rate)
-        self.q_target = dqn.QNetwork(hidden_layers_size, gamma, learning_rate)
+        self.qnn = dqn.QNetwork(hidden_layers_size, gamma)
+        self.q_target = dqn.QNetwork(hidden_layers_size, gamma)
         self.session.run(tf.global_variables_initializer())
         super(QPlayer, self).__init__(name)
 
     def select_cell(self, board, **kwargs):
-        e = random.random()
-        if e < self.epsilon:
-            cell = random.randint(0,8)
-            self.logger.debug("Choosing a random cell: %s", cell)
+        available_cells = np.where(board == 0)[0]
+        rnd = random.random()
+        eps = self.epsilon / (10**len(str(int(kwargs['counter']))))
+        if rnd < eps:
+            cell = random.choice(available_cells)
+            self.logger.debug("Choosing a random cell: %s [Epsilon = %s]", cell, eps)
         else:
             prediction = self.session.run(self.qnn.output,feed_dict={self.qnn.states: np.expand_dims(board, axis=0)})
             prediction = np.squeeze(prediction)
+            '''
+            available_cells = np.where(board == 0)[0]
+            for i in range(9):
+                prediction[i] = prediction[i] if i in available_cells else -np.inf
+            '''
             cell = np.argmax(prediction)
-            self.logger.debug("Predicting next cell - board: %s | prediction: %s | cell: %s", board, prediction, cell)
+            self.logger.debug("Predicting next cell - board: %s | prediction: %s | cell: %s [Epsilon = %s]", board, prediction, cell, eps)
         return cell
 
     @staticmethod
@@ -98,19 +105,19 @@ class QPlayer(Player):
             qt = self.session.run(self.q_target.output,feed_dict={self.q_target.states: self._fetch_from_batch(batch,'next_state')})
             if self.previous_cost is not None:
                 lr = min(self.default_lr, self.default_lr * (10**len(str(abs(int(self.previous_cost)))))/(1000))
-                #print(lr, len(str(abs(int(self.previous_cost_1)))), str(int(self.previous_cost_2 - self.previous_cost_1)))
-                #lr = self.default_lr/(10**len(str(kwargs['counter'])))
             else:
                 lr = self.default_lr
             self.last_lr = lr
-            _, cost = self.session.run([self.qnn.optimizer, self.qnn.cost], feed_dict={self.qnn.states: self._fetch_from_batch(batch,'state'),
-                                                                                       self.qnn.r: self._fetch_from_batch(batch,'reward'),
-                                                                                       self.qnn.actions: self._fetch_from_batch(batch, 'action'),
-                                                                                       self.qnn.q_target: qt,
-                                                                                       self.qnn.learning_rate: lr})
+            _, cost, o, a, p, l, h, r = \
+                self.session.run([self.qnn.optimizer, self.qnn.cost, self.qnn.output, self.qnn.enum_actions, self.qnn.predictions, self.qnn.labels, self.qnn.qtarget_highest_value, self.qnn.r],
+                                       feed_dict={self.qnn.states: self._fetch_from_batch(batch,'state'),
+                                                  self.qnn.r: self._fetch_from_batch(batch,'reward'),
+                                                  self.qnn.enum_actions: np.array(list(enumerate(map(lambda x: x['action'], batch)))),
+                                                  self.qnn.q_target: qt,
+                                                  self.qnn.learning_rate: lr})
+            self.logger.debug("Output: %s | Action: %s | GatherND (Predictions): %s | Labels: %s | Q-Target Max: %s | Reward: %s",o,a,p,l,h,r)
             self.previous_cost = cost
             self.logger.info('Q-Network cost: %s | Batch number: %s', cost, memory.counter / self.samples_till_learning)
-            switched = False
             if memory.counter % (self.batches_to_checkpoint * self.learning_batch_size) == 0:
                 self.logger.info('Copying Q-Network to Q-Target')
                 tf_vars = tf.trainable_variables()
@@ -119,8 +126,7 @@ class QPlayer(Player):
                 for i,v in enumerate(tf_vars[0:num_of_vars//2]):
                     operations.append(tf_vars[i+num_of_vars//2].assign((v.value()*self.tau) + ((1-self.tau)*tf_vars[i+num_of_vars//2].value())))
                 self.session.run(operations)
-                switched = True
-            return cost, switched
+            return cost
 
     def shutdown(self):
         self.session.close()

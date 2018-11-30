@@ -8,6 +8,9 @@ import players, dqn
 
 
 class Game:
+    INVALID_REWARD = -10
+
+    _invalid_move = False
     board = np.zeros(9)
     current_player = 1
     player1 = players.Player(None)
@@ -21,6 +24,7 @@ class Game:
     def reset(self):
         self.board = np.zeros(9)
         self.current_player = 1
+        self._invalid_move = False
 
     def active_player(self):
         if self.current_player == 1:
@@ -30,29 +34,34 @@ class Game:
 
     def play(self, cell):
         if self.board[cell] != 0:
-            return -100, False
+            self._invalid_move = True
         else:
             self.board[cell] = self.current_player
-            status = self.game_status()
-            if not status['game_over']:
-                self.current_player *= -1
-            return status['winner'], status['game_over']
+        status = self.game_status()
+        if not status['game_over']:
+            self.current_player *= -1
+        return status['winner'], status['game_over']
 
     def game_status(self):
         winner = 0
         winning_seq = []
-        winning_options = [[0,1,2],[3,4,5],[6,7,8],
-                           [0,3,6],[1,4,7],[2,5,8],
-                           [0,4,8],[2,4,6]]
-        for seq in winning_options:
-            s = self.board[seq[0]] + self.board[seq[1]] + self.board[seq[2]]
-            if abs(s) == 3:
-                winner = s/3
-                winning_seq = seq
-                break
-        game_over = winner != 0 or len(list(filter(lambda z: z==0, self.board))) == 0
+        if self._invalid_move:
+            game_over = True
+            winner = -1 * self.current_player
+        else:
+            winning_options = [[0,1,2],[3,4,5],[6,7,8],
+                               [0,3,6],[1,4,7],[2,5,8],
+                               [0,4,8],[2,4,6]]
+            for seq in winning_options:
+                s = self.board[seq[0]] + self.board[seq[1]] + self.board[seq[2]]
+                if abs(s) == 3:
+                    winner = s/3
+                    winning_seq = seq
+                    break
+            game_over = winner != 0 or len(list(filter(lambda z: z==0, self.board))) == 0
         return {'game_over': game_over, 'winner': winner,
-                'winning_seq': winning_seq, 'board': self.board}
+                'winning_seq': winning_seq, 'board': self.board,
+                'invalid_move': self._invalid_move}
 
     def plot_board(self):
         def vector_element_to_board_cell(el):
@@ -117,18 +126,22 @@ class Game:
 
 
 y = []
-s = []
+r = []
+v = []
 avg_cost = 0
+avg_r = 0
+avg_v = 0
+train_counter = 1
 random.seed(int(time()*1000))
 tf.reset_default_graph()
 logger = logging.getLogger("logger")
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-memory = dqn.ReplayMemory(10000)
-p1 = players.QPlayer('Q',[60],learning_rate=0.0003,gamma=0.75,learning_batch_size=1000,batches_to_checkpoint=50,
-                     tau=0.95,samples_till_learning=50)
-p2 = p1 #players.Drunk('DrunkDude')
+logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+memory = dqn.ReplayMemory(100)
+p1 = players.QPlayer('Q',[90],learning_rate=0.0003,gamma=0.75,learning_batch_size=10,batches_to_checkpoint=10,
+                     tau=0.95,epsilon=1,samples_till_learning=10)
+p2 = players.Drunk('DrunkDude')
 game = Game(p1,p2)
-for g in range(2000):
+for g in range(1,3001):
     game.reset()
     print('STARTING NEW GAME (#{})\n-------------'.format(g))
     while not game.game_status()['game_over']:
@@ -136,29 +149,32 @@ for g in range(2000):
             game.print_board()
             print("{}'s turn:".format(game.active_player().name))
         state = np.copy(game.board)
-        action = int(game.active_player().select_cell(game.board))
+        action = int(game.active_player().select_cell(game.board,counter=train_counter))
         reward, game_over = game.play(action)
-        next_state = np.copy(game.board) if not game_over else np.full(9,2.0)
-        state *= game.current_player
-        next_state = next_state * game.current_player if not game_over else next_state
-        reward = reward * game.current_player if game_over else reward
+        if game._invalid_move:
+            reward = game.INVALID_REWARD
+        next_state = np.copy(game.board) #if not game_over else np.full(9,2.0)
+        #state *= game.current_player
+        #next_state = next_state * game.current_player if not game_over else next_state
+        #reward = reward * game.current_player if game_over and not game._invalid_move else reward
         memory.append({'state': state, 'action': action,
                        'reward': reward, 'next_state': next_state})
-        x = game.active_player().learn(memory) if game.current_player == 1 else None
-        if x:
-            cost, switched = x[0], x[1]
-        else:
-            cost, switched = None, None
+        cost = game.active_player().learn(memory) if game.current_player == 1 else None
         if isinstance(game.active_player(), players.QPlayer) and cost is not None:
             avg_cost += cost
+            train_counter += 1
             if memory.counter % 10 == 0:
                 y.append(avg_cost/10)
                 avg_cost = 0
-                if switched:
-                    s.append(500)
-                else:
-                    s.append(0)
     print('-------------\nGAME OVER!')
+    avg_r += game.game_status()['winner']
+    if game.game_status()['invalid_move']:
+        avg_v += 1
+    if g % 10 == 0:
+        r.append(avg_r/10)
+        avg_r = 0
+        v.append(avg_v/10)
+        avg_v = 0
     game.print_board()
     print(game.game_status())
     print('-------------')
@@ -166,8 +182,12 @@ for pp in [p1,p2]:
     pp.shutdown()
 print(y)
 plt.scatter(range(len(y)),y)
-plt.scatter(range(len(s)),s,c='r')
 plt.show()
+print(r)
+plt.scatter(range(len(r)),r,c='g')
+plt.scatter(range(len(v)),v,c='r')
+plt.show()
+print(memory.memory)
 
 
 
