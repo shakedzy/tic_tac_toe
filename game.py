@@ -1,4 +1,4 @@
-import logging
+import logging, os
 import random
 from time import time
 import numpy as np
@@ -26,6 +26,12 @@ class Game:
 
     def active_player(self):
         if self.current_player == 1:
+            return self.player1
+        else:
+            return self.player2
+
+    def inactive_player(self):
+        if self.current_player == -1:
             return self.player1
         else:
             return self.player2
@@ -118,57 +124,91 @@ class Game:
                 row = ' '
 
 
-y = []
-r = []
-random.seed(int(time()*1000))
-tf.reset_default_graph()
-logging.basicConfig(level=logging.WARN, format='%(message)s')
-memory = dqn.ReplayMemory(10000)
-p1 = players.QPlayer('Q',[80,100,80],learning_batch_size=100,
-                     batches_to_q_target_switch=100,initial_epsilon=0.05)
-p2 = players.Drunk('DrunkDude')
-game = Game(p1,p2)
-total_reward = 0
-for g in range(1,100001):
-    game.reset()
-    #print('STARTING NEW GAME (#{})\n-------------'.format(g))
-    while not game.game_status()['game_over']:
-        if isinstance(game.active_player(), players.Human):
-            game.print_board()
-            print("{}'s turn:".format(game.active_player().name))
-        state = np.copy(game.board)
-        action = int(game.active_player().select_cell(game.board))
-        reward, game_over = game.play(action)
-        if game.active_player().name == 'Q':
-            total_reward += reward
-        next_state = np.copy(game.board) #if not game_over else np.full(9,2.0)
-        #state *= game.current_player
-        #next_state = next_state * game.current_player if not game_over else next_state
-        #reward = reward * game.current_player if game_over and not game._invalid_move else reward
-        memory.append({'state': state, 'action': action,
-                       'reward': reward, 'next_state': next_state,
-                       'game_over': game_over})
-        cost = game.active_player().learn(memory) #if game.current_player == 1 else None
-        if game.active_player().name == 'Q' and cost is not None:
-            y.append(cost)
-            #print('\n\nTRAINING >>>> Cost: {c} | Total Reward Till Now: {r}\n\n'.format(c=cost,r=total_reward))
-    r.append(total_reward)
-    if g % 100 == 0:
-        print('Game: {g} | Reward: {r}'.format(g=g,r=total_reward))
+def train():
+    y = []
+    r = []
+    random.seed(int(time()*1000))
+    tf.reset_default_graph()
+    logging.basicConfig(level=logging.WARN, format='%(message)s')
+    p1 = players.QPlayer('Q',[80,80],
+                         learning_batch_size=100, batches_to_q_target_switch=100,
+                         initial_epsilon=0.01, pre_train_steps=5000,
+                         memory_size=100000)
+    p2 = p1
+    game = Game(p1,p2)
     total_reward = 0
-    #print('-------------\nGAME OVER!')
-    #game.print_board()
-    #print(game.game_status())
-    #print('-------------')
-for pp in [p1,p2]:
-    pp.shutdown()
-with open('costs','w') as f:
-    f.write(y)
-plt.scatter(range(len(y)),y)
-plt.show()
-with open('rewards','w') as f:
-    f.write(r)
-plt.scatter(range(len(r)),r,c='g')
-plt.show()
+    for g in range(1,100001):
+        game.reset()
+        #print('STARTING NEW GAME (#{})\n-------------'.format(g))
+        while not game.game_status()['game_over']:
+            if isinstance(game.active_player(), players.Human):
+                game.print_board()
+                print("{}'s turn:".format(game.active_player().name))
+            state = game.current_player * game.board
+            action = int(game.active_player().select_cell(state)) if np.count_nonzero(game.board) > 0 else random.randint(0,8)
+            reward, game_over = game.play(action)
+            if reward != game.INVALID_REWARD:
+                reward *= game.current_player
+            if game.current_player == 1:
+                total_reward += reward
+            next_state = game.current_player * game.board if not game_over else np.zeros(9)
+            game.active_player().memory.append({'state': state, 'action': action,
+                                                'reward': reward, 'next_state': next_state,
+                                                'game_over': game_over})
+            if reward != game.INVALID_REWARD:
+                game.inactive_player().memory.append({'state': -state, 'action': action,
+                                                      'reward': -reward, 'next_state': -next_state,
+                                                      'game_over': game_over})
+            cost = game.active_player().learn()
+            if cost is not None:
+                y.append(cost)
+        r.append(total_reward)
+        if g % 100 == 0:
+            print('Game: {g} | Reward: {r}'.format(g=g,r=total_reward))
+        total_reward = 0
+        #print('-------------\nGAME OVER!')
+        #game.print_board()
+        #print(game.game_status())
+        #print('-------------')
+    p1.save(os.getcwd() + '/q.ckpt')
+    for pp in [p1,p2]:
+        pp.shutdown()
+    with open('costs','w') as f:
+        f.write(str(y))
+    plt.scatter(range(len(y)),y)
+    plt.show()
+    with open('rewards','w') as f:
+        f.write(str(r))
+    plt.scatter(range(len(r)),r,c='g')
+    plt.show()
 
+
+def play():
+    random.seed(int(time()))
+    p1 = players.QPlayer('Q',[80,100,80],learning_batch_size=100,
+                         batches_to_q_target_switch=100,initial_epsilon=0.0,
+                         pre_train_steps=0)
+    p1.restore(os.getcwd() + '/q.ckpt')
+    p2 = players.Human('H')
+    game = Game(p1,p2)
+    for g in range(5):
+        game.reset()
+        total_reward = 0
+        print('STARTING NEW GAME (#{})\n-------------'.format(g))
+        while not game.game_status()['game_over']:
+            if isinstance(game.active_player(), players.Human):
+                game.print_board()
+                print("{}'s turn:".format(game.active_player().name))
+            state = game.current_player * game.board
+            action = int(game.active_player().select_cell(state)) if np.count_nonzero(game.board) > 0 or not isinstance(game.active_player(),players.QPlayer) else random.randint(0,8)
+            reward, game_over = game.play(action)
+            total_reward += reward
+        print('-------------\nGAME OVER!')
+        game.print_board()
+        print(game.game_status())
+        print('Agent\'s reward: ', total_reward)
+        print('-------------')
+
+
+train()
 

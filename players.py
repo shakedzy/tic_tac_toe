@@ -46,11 +46,12 @@ class QPlayer(Player):
     qnn: dqn.QNetwork = None
     q_target: dqn.QNetwork = None
     session: tf.Session = None
+    memory: dqn.ReplayMemory = None
     train_counter = 0
     counter = 0
 
     def __init__(self, name, hidden_layers_size, initial_learning_rate=0.0003, gamma=0.9, learning_batch_size=50,
-                 batches_to_q_target_switch=50, initial_epsilon=1, tau=0.9, pre_train_steps=5000):
+                 batches_to_q_target_switch=50, initial_epsilon=1, tau=0.9, pre_train_steps=5000, memory_size=100000):
         self.learning_batch_size = learning_batch_size
         self.batches_to_q_target_switch = batches_to_q_target_switch
         self.tau = tau
@@ -59,6 +60,7 @@ class QPlayer(Player):
         self.counter = 0
         self.init_epsilon = initial_epsilon
         self.init_lr = initial_learning_rate
+        self.memory = dqn.ReplayMemory(memory_size)
         self.session = tf.Session()
         self.qnn = dqn.QNetwork(9, 9, hidden_layers_size, gamma)
         self.q_target = dqn.QNetwork(9, 9, hidden_layers_size, gamma)
@@ -76,7 +78,11 @@ class QPlayer(Player):
         else:
             prediction = self.session.run(self.qnn.output,feed_dict={self.qnn.states: np.expand_dims(board, axis=0)})
             prediction = np.squeeze(prediction)
-            cell = np.argmax(prediction)
+            nth = int(kwargs.get('nth',1))
+            if nth == 1:
+                cell = np.argmax(prediction)
+            else:
+                cell = (-prediction).argsort()[nth-1]
             logging.debug("Predicting next cell - board: %s | prediction: %s | cell: %s [Epsilon = %s]", board, prediction, cell, eps)
         return cell
 
@@ -87,13 +93,13 @@ class QPlayer(Player):
         else:
             return np.array(list(map(lambda x: x[key], batch)))
 
-    def learn(self, memory, **kwargs):
-        logging.debug('Memory counter = %s',memory.counter)
-        if memory.counter % self.learning_batch_size != 0 or memory.counter < self.learning_batch_size:
+    def learn(self, **kwargs):
+        logging.debug('Memory counter = %s',self.memory.counter)
+        if self.memory.counter % self.learning_batch_size != 0 or self.memory.counter < self.learning_batch_size:
             pass
         else:
             logging.debug('Starting learning procedure')
-            batch = memory.sample(self.learning_batch_size)
+            batch = self.memory.sample(self.learning_batch_size)
             qt = self.session.run(self.q_target.output,feed_dict={self.q_target.states: self._fetch_from_batch(batch,'next_state')})
             terminals = self._fetch_from_batch(batch,'game_over')
             for i in range(terminals.size):
@@ -109,7 +115,7 @@ class QPlayer(Player):
                                                   self.qnn.learning_rate: lr})
             logging.info('Batch number: %s | Q-Network cost: %s | Learning rate: %s',
                          self.train_counter, cost, lr)
-            if memory.counter % (self.batches_to_q_target_switch * self.learning_batch_size) == 0:
+            if self.memory.counter % (self.batches_to_q_target_switch * self.learning_batch_size) == 0:
                 logging.info('Copying Q-Network to Q-Target')
                 tf_vars = tf.trainable_variables()
                 num_of_vars = len(tf_vars)
@@ -119,13 +125,13 @@ class QPlayer(Player):
                 self.session.run(operations)
             return cost
 
-    def save(self, filename='q.ckpt'):
-        with tf.train.Saver() as saver:
-            saver.save(self.session,filename)
+    def save(self, filename):
+        saver = tf.train.Saver()
+        saver.save(self.session, filename)
 
-    def restore(self, filename='q.ckpt'):
-        with tf.train.Saver() as saver:
-            saver.restore(self.session,filename)
+    def restore(self, filename):
+        saver = tf.train.Saver()
+        saver.restore(self.session, filename)
 
     def shutdown(self):
         self.session.close()

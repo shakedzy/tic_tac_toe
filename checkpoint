@@ -1,0 +1,2 @@
+model_checkpoint_path: "/Users/shaked.z/self/tic_tac_toe/q.ckpt"
+all_model_checkpoint_paths: "/Users/shaked.z/self/tic_tac_toe/q.ckpt"
