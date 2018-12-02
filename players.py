@@ -43,83 +43,74 @@ class Drunk(Player):
 
 
 class QPlayer(Player):
-    logger = logging.getLogger("logger")
     qnn: dqn.QNetwork = None
     q_target: dqn.QNetwork = None
     session: tf.Session = None
+    train_counter = 0
+    counter = 0
 
-    learning_batch_size = 0
-    batches_to_checkpoint = 0
-    samples_till_learning = 0
-    last_lr = None
-
-    previous_cost = None
-
-    def __init__(self, name, hidden_layers_size, learning_rate, gamma, learning_batch_size, samples_till_learning, batches_to_checkpoint,
-                 epsilon, tau, **kwargs):
+    def __init__(self, name, hidden_layers_size, initial_learning_rate=0.0003, gamma=0.9, learning_batch_size=50,
+                 batches_to_q_target_switch=50, initial_epsilon=1, tau=0.9, pre_train_steps=5000):
         self.learning_batch_size = learning_batch_size
-        self.batches_to_checkpoint = batches_to_checkpoint
+        self.batches_to_q_target_switch = batches_to_q_target_switch
         self.tau = tau
-        self.epsilon = epsilon
-        self.default_lr = learning_rate
-        self.samples_till_learning = samples_till_learning
+        self.train_counter = 0
+        self.pre_train_steps = pre_train_steps
+        self.counter = 0
+        self.init_epsilon = initial_epsilon
+        self.init_lr = initial_learning_rate
         self.session = tf.Session()
-        self.qnn = dqn.QNetwork(hidden_layers_size, gamma)
-        self.q_target = dqn.QNetwork(hidden_layers_size, gamma)
+        self.qnn = dqn.QNetwork(9, 9, hidden_layers_size, gamma)
+        self.q_target = dqn.QNetwork(9, 9, hidden_layers_size, gamma)
         self.session.run(tf.global_variables_initializer())
         super(QPlayer, self).__init__(name)
 
     def select_cell(self, board, **kwargs):
         available_cells = np.where(board == 0)[0]
         rnd = random.random()
-        eps = self.epsilon / (10**len(str(int(kwargs['counter']))))
-        if rnd < eps:
+        eps = self.init_epsilon #/ (10 ** (len(str(self.train_counter)) // 2))
+        self.counter += 1
+        if self.counter <= self.pre_train_steps or rnd < eps:
             cell = random.choice(available_cells)
-            self.logger.debug("Choosing a random cell: %s [Epsilon = %s]", cell, eps)
+            logging.debug("Choosing a random cell: %s [Epsilon = %s]", cell, eps)
         else:
             prediction = self.session.run(self.qnn.output,feed_dict={self.qnn.states: np.expand_dims(board, axis=0)})
             prediction = np.squeeze(prediction)
-            '''
-            available_cells = np.where(board == 0)[0]
-            for i in range(9):
-                prediction[i] = prediction[i] if i in available_cells else -np.inf
-            '''
             cell = np.argmax(prediction)
-            self.logger.debug("Predicting next cell - board: %s | prediction: %s | cell: %s [Epsilon = %s]", board, prediction, cell, eps)
+            logging.debug("Predicting next cell - board: %s | prediction: %s | cell: %s [Epsilon = %s]", board, prediction, cell, eps)
         return cell
 
     @staticmethod
-    def _fetch_from_batch(batch, key):
-        a = np.array(list(map(lambda x: x[key], batch)))
-        if len(a.shape) < 2:
-            a = np.expand_dims(a, axis=1)
-        return a
+    def _fetch_from_batch(batch, key, enum=False):
+        if enum:
+            return np.array(list(enumerate(map(lambda x: x[key], batch))))
+        else:
+            return np.array(list(map(lambda x: x[key], batch)))
 
     def learn(self, memory, **kwargs):
-        self.logger.debug('Memory counter = %s',memory.counter)
-        if memory.counter % self.samples_till_learning != 0 or memory.counter < self.learning_batch_size:
+        logging.debug('Memory counter = %s',memory.counter)
+        if memory.counter % self.learning_batch_size != 0 or memory.counter < self.learning_batch_size:
             pass
         else:
-            self.logger.info('Initiating learning procedure')
+            logging.debug('Starting learning procedure')
             batch = memory.sample(self.learning_batch_size)
             qt = self.session.run(self.q_target.output,feed_dict={self.q_target.states: self._fetch_from_batch(batch,'next_state')})
-            if self.previous_cost is not None:
-                lr = min(self.default_lr, self.default_lr * (10**len(str(abs(int(self.previous_cost)))))/(1000))
-            else:
-                lr = self.default_lr
-            self.last_lr = lr
-            _, cost, o, a, p, l, h, r = \
-                self.session.run([self.qnn.optimizer, self.qnn.cost, self.qnn.output, self.qnn.enum_actions, self.qnn.predictions, self.qnn.labels, self.qnn.qtarget_highest_value, self.qnn.r],
+            terminals = self._fetch_from_batch(batch,'game_over')
+            for i in range(terminals.size):
+                if terminals[i]:
+                    qt[i] = np.zeros(9)
+            lr = self.init_lr #/ (10 ** (len(str(self.train_counter)) // 3))
+            self.train_counter += 1
+            _, cost = self.session.run([self.qnn.optimizer, self.qnn.cost],
                                        feed_dict={self.qnn.states: self._fetch_from_batch(batch,'state'),
                                                   self.qnn.r: self._fetch_from_batch(batch,'reward'),
-                                                  self.qnn.enum_actions: np.array(list(enumerate(map(lambda x: x['action'], batch)))),
+                                                  self.qnn.actions: self._fetch_from_batch(batch, 'action', enum=True),
                                                   self.qnn.q_target: qt,
                                                   self.qnn.learning_rate: lr})
-            self.logger.debug("Output: %s | Action: %s | GatherND (Predictions): %s | Labels: %s | Q-Target Max: %s | Reward: %s",o,a,p,l,h,r)
-            self.previous_cost = cost
-            self.logger.info('Q-Network cost: %s | Batch number: %s', cost, memory.counter / self.samples_till_learning)
-            if memory.counter % (self.batches_to_checkpoint * self.learning_batch_size) == 0:
-                self.logger.info('Copying Q-Network to Q-Target')
+            logging.info('Batch number: %s | Q-Network cost: %s | Learning rate: %s',
+                         self.train_counter, cost, lr)
+            if memory.counter % (self.batches_to_q_target_switch * self.learning_batch_size) == 0:
+                logging.info('Copying Q-Network to Q-Target')
                 tf_vars = tf.trainable_variables()
                 num_of_vars = len(tf_vars)
                 operations = []
@@ -127,6 +118,14 @@ class QPlayer(Player):
                     operations.append(tf_vars[i+num_of_vars//2].assign((v.value()*self.tau) + ((1-self.tau)*tf_vars[i+num_of_vars//2].value())))
                 self.session.run(operations)
             return cost
+
+    def save(self, filename='q.ckpt'):
+        with tf.train.Saver() as saver:
+            saver.save(self.session,filename)
+
+    def restore(self, filename='q.ckpt'):
+        with tf.train.Saver() as saver:
+            saver.restore(self.session,filename)
 
     def shutdown(self):
         self.session.close()
