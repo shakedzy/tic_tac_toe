@@ -8,21 +8,28 @@ import players, dqn
 
 
 class Game:
-    INVALID_REWARD = -10
+    WINNING_REWARD = 1
+    LOSING_REWARD = -10
+    INVALID_REWARD = -100
 
     board = np.zeros(9)
     current_player = 1
-    player1 = players.Player(None)
-    player2 = players.Player(None)
+    player1: players.Player = None
+    player2: players.Player = None
+
+    _invalid_move_played = False
 
     def __init__(self, player1, player2):
         self.player1 = player1
         self.player2 = player2
+        self.player1.player_id = 1
+        self.player2.player_id = -1
         self.reset()
 
     def reset(self):
         self.board = np.zeros(9)
         self.current_player = 1
+        self._invalid_move_played = False
 
     def active_player(self):
         if self.current_player == 1:
@@ -37,14 +44,22 @@ class Game:
             return self.player2
 
     def play(self, cell):
+        self._invalid_move_played = False
         if self.board[cell] != 0:
-            return self.INVALID_REWARD, False
+            self._invalid_move_played = True
+            return {'winner': 0,
+                    'game_over': False,
+                    'invalid_move': True}
         else:
             self.board[cell] = self.current_player
         status = self.game_status()
-        if not status['game_over']:
+        return {'winner': status['winner'],
+                'game_over': status['game_over'],
+                'invalid_move': False}
+
+    def next_player(self):
+        if not self._invalid_move_played:
             self.current_player *= -1
-        return status['winner'], status['game_over']
 
     def game_status(self):
         winner = 0
@@ -126,51 +141,95 @@ class Game:
 
 def train():
     y = []
-    r = []
+    r1 = []
+    r2 = []
     random.seed(int(time()*1000))
     tf.reset_default_graph()
     logging.basicConfig(level=logging.WARN, format='%(message)s')
-    p1 = players.QPlayer('Q',[80,80],
-                         learning_batch_size=100, batches_to_q_target_switch=100,
-                         initial_epsilon=0.01, pre_train_steps=5000,
-                         memory_size=100000)
-    p2 = p1
+    memory = dqn.ReplayMemory(100000)
+    p1 = players.QPlayer('Q', [80,80],
+                         learning_batch_size=100, batches_to_q_target_switch=1000,
+                         epsilon=0.01, pre_train_steps=0, gamma=0.9, tau=0.9,
+                         learning_rate=0.0003)
+    p2 = players.Novice('N')
     game = Game(p1,p2)
-    total_reward = 0
-    for g in range(1,100001):
+    total_reward_1 = 0
+    total_reward_2 = 0
+    for g in range(1,1000001):
         game.reset()
         #print('STARTING NEW GAME (#{})\n-------------'.format(g))
         while not game.game_status()['game_over']:
+            reward1 = 0
+            reward2 = 0
             if isinstance(game.active_player(), players.Human):
                 game.print_board()
                 print("{}'s turn:".format(game.active_player().name))
             state = game.current_player * game.board
             action = int(game.active_player().select_cell(state)) if np.count_nonzero(game.board) > 0 else random.randint(0,8)
-            reward, game_over = game.play(action)
-            if reward != game.INVALID_REWARD:
-                reward *= game.current_player
-            if game.current_player == 1:
-                total_reward += reward
+            play_status = game.play(action)
+            game_over = play_status['game_over']
             next_state = game.current_player * game.board if not game_over else np.zeros(9)
-            game.active_player().memory.append({'state': state, 'action': action,
-                                                'reward': reward, 'next_state': next_state,
-                                                'game_over': game_over})
-            if reward != game.INVALID_REWARD:
-                game.inactive_player().memory.append({'state': -state, 'action': action,
-                                                      'reward': -reward, 'next_state': -next_state,
-                                                      'game_over': game_over})
-            cost = game.active_player().learn()
+            if play_status['invalid_move']:
+                memory.append({'state': state, 'action': action,
+                               'reward': game.INVALID_REWARD, 'next_state': next_state,
+                               'game_over': game_over})
+                if game.current_player == 1:
+                    reward1 = game.INVALID_REWARD
+                else:
+                    reward2 = game.INVALID_REWARD
+            elif not game_over:
+                memory.append({'state': state, 'action': action,
+                               'reward': 0, 'next_state': next_state,
+                               'game_over': game_over})
+                memory.append({'state': -state, 'action': action,
+                               'reward': 0, 'next_state': -next_state,
+                               'game_over': game_over})
+            else:
+                if play_status['winner'] == game.current_player:
+                    memory.append({'state': state, 'action': action,
+                                   'reward': game.WINNING_REWARD, 'next_state': next_state,
+                                   'game_over': game_over})
+                    memory.append({'state': -state, 'action': action,
+                                   'reward': game.LOSING_REWARD, 'next_state': -next_state,
+                                   'game_over': game_over})
+                    if game.current_player == 1:
+                        reward1 = game.WINNING_REWARD
+                        reward2 = game.LOSING_REWARD
+                    else:
+                        reward1 = game.LOSING_REWARD
+                        reward2 = game.WINNING_REWARD
+                else:
+                    memory.append({'state': state, 'action': action,
+                                   'reward': game.LOSING_REWARD, 'next_state': next_state,
+                                   'game_over': game_over})
+                    memory.append({'state': -state, 'action': action,
+                                   'reward': game.WINNING_REWARD, 'next_state': -next_state,
+                                   'game_over': game_over})
+                    if game.current_player == -1:
+                        reward1 = game.WINNING_REWARD
+                        reward2 = game.LOSING_REWARD
+                    else:
+                        reward1 = game.LOSING_REWARD
+                        reward2 = game.WINNING_REWARD
+            total_reward_1 += reward1
+            total_reward_2 += reward2
+            cost = game.active_player().learn(memory)
             if cost is not None:
                 y.append(cost)
-        r.append(total_reward)
+            if not game_over:
+                game.next_player()
         if g % 100 == 0:
-            print('Game: {g} | Reward: {r}'.format(g=g,r=total_reward))
-        total_reward = 0
+            print('Game: {g} | Average Rewards - P1: {r1}, P2: {r2}'.format(g=g,r1=total_reward_1/100.0,
+                                                                            r2=total_reward_2/100.0))
+            r1.append(total_reward_1 / 100.0)
+            r2.append(total_reward_2 / 100.0)
+            total_reward_1 = 0
+            total_reward_2 = 0
         #print('-------------\nGAME OVER!')
         #game.print_board()
         #print(game.game_status())
         #print('-------------')
-    p1.save(os.getcwd() + '/q.ckpt')
+    p1.save(os.getcwd() + '/qx.ckpt')
     for pp in [p1,p2]:
         pp.shutdown()
     with open('costs','w') as f:
@@ -178,37 +237,52 @@ def train():
     plt.scatter(range(len(y)),y)
     plt.show()
     with open('rewards','w') as f:
-        f.write(str(r))
-    plt.scatter(range(len(r)),r,c='g')
+        f.write(str(r1))
+        f.write(str(r2))
+    plt.scatter(range(len(r1)),r1,c='g')
+    plt.scatter(range(len(r2)), r2, c='r')
+    plt.show()
+    plt.ylim(-0.3,1)
+    plt.scatter(range(len(y)), y)
+    plt.show()
+    plt.ylim(-5.5,1.5)
+    plt.scatter(range(len(r1)), r1, c='g')
+    plt.scatter(range(len(r2)), r2, c='r')
     plt.show()
 
 
 def play():
     random.seed(int(time()))
-    p1 = players.QPlayer('Q',[80,100,80],learning_batch_size=100,
-                         batches_to_q_target_switch=100,initial_epsilon=0.0,
-                         pre_train_steps=0)
-    p1.restore(os.getcwd() + '/q.ckpt')
-    p2 = players.Human('H')
-    game = Game(p1,p2)
-    for g in range(5):
-        game.reset()
-        total_reward = 0
+    p1 = players.QPlayer('Q', [80,80], learning_batch_size=100, gamma=0.9, tau=0.9,
+                         batches_to_q_target_switch=100, epsilon=0.0, learning_rate=0.0003)
+    p1.restore(os.getcwd() + '/lxo.ckpt')
+    p2 = players.Human('N')
+    for g in range(2):
         print('STARTING NEW GAME (#{})\n-------------'.format(g))
+        if g%2==0:
+            game = Game(p1,p2)
+            print("Player 1")
+        else:
+            game = Game(p2,p1)
+            print("Player -1")
         while not game.game_status()['game_over']:
             if isinstance(game.active_player(), players.Human):
                 game.print_board()
                 print("{}'s turn:".format(game.active_player().name))
-            state = game.current_player * game.board
-            action = int(game.active_player().select_cell(state)) if np.count_nonzero(game.board) > 0 or not isinstance(game.active_player(),players.QPlayer) else random.randint(0,8)
-            reward, game_over = game.play(action)
-            total_reward += reward
+            for nth in range(1,9):
+                if nth > 1:
+                    print('Attempt ',nth)
+                state = np.copy(game.board)
+                action = int(game.active_player().select_cell(state,nth=nth)) if np.count_nonzero(game.board) > 0 or not isinstance(game.active_player(),players.QPlayer) else random.randint(0,8)
+                play_status = game.play(action)
+                if not play_status['invalid_move']:
+                    break
+            if not game.game_status()['game_over']:
+                game.next_player()
         print('-------------\nGAME OVER!')
         game.print_board()
         print(game.game_status())
-        print('Agent\'s reward: ', total_reward)
         print('-------------')
 
 
 train()
-
