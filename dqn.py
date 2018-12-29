@@ -39,6 +39,6 @@ class ReplayMemory:
         self.counter += 1
 
     def sample(self, n, or_less=False):
-        if or_less and n < self.counter:
+        if or_less and n > self.counter:
             n = self.counter
         return random.sample(self.memory, n)
