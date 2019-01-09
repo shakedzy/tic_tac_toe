@@ -9,7 +9,7 @@ from game import Game
 
 
 def train():
-    y = []
+    costs = []
     r1 = []
     r2 = []
     random.seed(int(time()*1000))
@@ -65,7 +65,7 @@ def train():
             total_rewards[game.active_player().name] += r
             cost = game.active_player().learn(learning_rate=0.0001)
             if cost is not None:
-                y.append(cost)
+                costs.append(cost)
             if not game_over:
                 game.next_player()
 
@@ -86,14 +86,14 @@ def train():
             print('Game: {g} | Number of Trainings: {t} | Epsilon: {e} | Average Rewards - {p1}: {r1}, {p2}: {r2}'
                   .format(g=g, p1=p1.name, r1=total_rewards[p1.name]/100.0,
                           p2=p2.name, r2=total_rewards[p2.name]/100.0,
-                          t=len(y), e=eps))
+                          t=len(costs), e=eps))
             r1.append(total_rewards[p1.name]/100.0)
             r2.append(total_rewards[p2.name]/100.0)
             total_rewards = {p1.name: 0, p2.name: 0}
-    p1.save('./models/q3.ckpt')
+    p1.save('./models/q.ckpt')
     for pp in [p1,p2]:
         pp.shutdown()
-    plt.scatter(range(len(y)),y)
+    plt.scatter(range(len(costs)),costs)
     plt.show()
     plt.scatter(range(len(r1)),r1,c='g')
     plt.show()
@@ -103,8 +103,8 @@ def train():
 
 def play():
     random.seed(int(time()))
-    p1 = players.QPlayer([100,160,160,100], learning_batch_size=100, gamma=0.9, tau=0.9,
-                         batches_to_q_target_switch=100)
+    p1 = players.QPlayer([100,160,160,100], learning_batch_size=100, gamma=0.95, tau=0.95,
+                         batches_to_q_target_switch=100, memory_size=100000)
     p1.restore('./models/q.ckpt')
     p2 = players.Human()
     for g in range(4):
@@ -119,20 +119,12 @@ def play():
             if isinstance(game.active_player(), players.Human):
                 game.print_board()
                 print("{}'s turn:".format(game.current_player))
-            for nth in range(1,9):
-                if nth > 1:
-                    print('Attempt ',nth)
-                state = np.copy(game.board)
-                action = int(game.active_player().select_cell(state,epsilon=0.0,nth=nth)) if np.count_nonzero(game.board) > 0 or not isinstance(game.active_player(),players.QPlayer) else random.randint(0,8)
-                play_status = game.play(action)
-                if not play_status['invalid_move']:
-                    break
+            state = np.copy(game.board)
+            action = int(game.active_player().select_cell(state,epsilon=0.0)) if np.count_nonzero(game.board) > 0 or not isinstance(game.active_player(),players.QPlayer) else random.randint(0,8)
+            game.play(action)
             if not game.game_status()['game_over']:
                 game.next_player()
         print('-------------\nGAME OVER!')
         game.print_board()
         print(game.game_status())
         print('-------------')
-
-
-play()

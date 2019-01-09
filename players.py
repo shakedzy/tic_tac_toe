@@ -7,6 +7,9 @@ from abc import abstractmethod
 
 
 class Player:
+    """
+    Base class for all player types
+    """
     name = None
     player_id = None
 
@@ -29,6 +32,9 @@ class Player:
 
 
 class Human(Player):
+    """
+    This player type allow a human player to play the game
+    """
     def select_cell(self, board, **kwargs):
         cell = input("Select cell to fill:\n678\n345\n012\ncell number: ")
         return cell
@@ -38,6 +44,9 @@ class Human(Player):
 
 
 class Drunk(Player):
+    """
+    Drunk player always selects a random valid move
+    """
     def select_cell(self, board, **kwargs):
         available_cells = np.where(board == 0)[0]
         return random.choice(available_cells)
@@ -47,6 +56,12 @@ class Drunk(Player):
 
 
 class Novice(Player):
+    """
+    A more sophisticated bot, which follows the following strategy:
+    1) If it already has 2-in-a-row, capture the required cell for 3
+    2) If not, and if the opponent has 2-in-a-row, capture the required cell to prevent hi, from winning
+    3) Else, select a random vacant cell
+    """
     def find_two_of_three(self, board, which_player_id):
         cell = None
         winning_options = [[0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -76,8 +91,20 @@ class Novice(Player):
 
 
 class QPlayer(Player):
+    """
+    A reinforcement learning agent, based on Double Deep Q Network model
+    This class holds two Q-Networks: `qnn` is the learning network, `q_target` is the semi-constant network
+    """
     def __init__(self, hidden_layers_size, gamma, learning_batch_size,
-                 batches_to_q_target_switch, tau, memory_size=100000):
+                 batches_to_q_target_switch, tau, memory_size):
+        """
+        :param hidden_layers_size: an array of integers, specifying the number of layers of the network and their size
+        :param gamma: the Q-Learning discount factor
+        :param learning_batch_size: training batch size
+        :param batches_to_q_target_switch: after how many batches (trainings) should the Q-network be copied to Q-Target
+        :param tau: a number between 0 and 1, determining how to combine the network and Q-Target when copying is performed
+        :param memory_size: size of the memory buffer used to keep the training set
+        """
         self.learning_batch_size = learning_batch_size
         self.batches_to_q_target_switch = batches_to_q_target_switch
         self.tau = tau
@@ -100,11 +127,7 @@ class QPlayer(Player):
         else:
             prediction = self.session.run(self.qnn.output,feed_dict={self.qnn.states: np.expand_dims(self.player_id * board, axis=0)})
             prediction = np.squeeze(prediction)
-            nth = int(kwargs.get('nth',1))
-            if nth == 1:
-                cell = np.argmax(prediction)
-            else:
-                cell = (-prediction).argsort()[nth-1]
+            cell = np.argmax(prediction)
             logging.debug("Predicting next cell - board: %s | player ID: %s | prediction: %s | cell: %s [Epsilon = %s]", board, prediction, cell, eps)
         return cell
 
@@ -127,7 +150,7 @@ class QPlayer(Player):
             terminals = self._fetch_from_batch(batch,'game_over')
             for i in range(terminals.size):
                 if terminals[i]:
-                    qt[i] = np.zeros(9)
+                    qt[i] = np.zeros(9)  # manually setting q-target values of terminal states to 0
             lr = kwargs['learning_rate']
             _, cost = self.session.run([self.qnn.optimizer, self.qnn.cost],
                                        feed_dict={self.qnn.states: self._fetch_from_batch(batch,'state'),

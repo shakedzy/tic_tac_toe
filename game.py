@@ -1,12 +1,14 @@
 import numpy as np
-import players
 
 
 class Game:
+    """
+    Tic-Tac-Toe game class
+    """
     board = np.zeros(9)
-    current_player = 1
-    player1: players.Player = None
-    player2: players.Player = None
+    current_player = 1  # first player is 1, second player is -1
+    player1 = None
+    player2 = None
 
     _invalid_move_played = False
 

@@ -4,11 +4,14 @@ from collections import deque
 
 
 class QNetwork:
+    """
+    A Q-Network implementation
+    """
     def __init__(self, input_size, output_size, hidden_layers_size, gamma):
         self.q_target = tf.placeholder(shape=(None, output_size), dtype=tf.float32)
         self.r = tf.placeholder(shape=None, dtype=tf.float32)
         self.states = tf.placeholder(shape=(None, input_size), dtype=tf.float32)
-        self.actions = tf.placeholder(shape=(None, 2), dtype=tf.int32)
+        self.actions = tf.placeholder(shape=(None, 2), dtype=tf.int32)  # enumerated actions
         self.learning_rate = tf.placeholder(shape=[], dtype=tf.float32)
         layer = self.states
         for l in hidden_layers_size:
@@ -23,6 +26,9 @@ class QNetwork:
 
 
 class ReplayMemory:
+    """
+    A cyclic Experience Replay memory buffer
+    """
     memory: deque = None
     counter = 0
 
