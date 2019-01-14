@@ -36,3 +36,8 @@ minutes on a MacBook Pro (2018)
 ### out-of-the-box model:
 `models/q.ckpt` is a model trained by me using the configurations
 in the code. 
+
+---------------------------
+
+### Related blogposts:
+Read about where I got stuck when developing this code on "[Lessons Learned from Tic-Tac-Toe: Practical Reinforcement Learning Tips](https://medium.com/@shakedzy/lessons-learned-from-tic-tac-toe-practical-reinforcement-learning-tips-5cac654a45a8)"
