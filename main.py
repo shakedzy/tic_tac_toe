@@ -26,7 +26,7 @@ def train():
     total_rewards = {p1.name: 0, p2.name: 0}
 
     # Start playing
-    num_of_games = 400000
+    num_of_games = 1500000
     for g in range(1,num_of_games+1):
         game = Game(p1,p2) if g%2==0 else Game(p2,p1)  # make sure both players play X and O
         last_phases = {p1.name: None, p2.name: None}  # will be used to store the last state a player was in

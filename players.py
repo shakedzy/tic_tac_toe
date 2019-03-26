@@ -159,8 +159,8 @@ class QPlayer(Player):
                                                   self.qnn.q_target: qt,
                                                   self.qnn.learning_rate: lr})
             logging.info('Batch number: %s | Q-Network cost: %s | Learning rate: %s',
-                         self.learn_counter % self.learning_batch_size, cost, lr)
-            if self.memory.counter % (self.batches_to_q_target_switch * self.learning_batch_size) == 0:
+                         self.learn_counter // self.learning_batch_size, cost, lr)
+            if self.learn_counter % (self.batches_to_q_target_switch * self.learning_batch_size) == 0:
                 logging.info('Copying Q-Network to Q-Target')
                 tf_vars = tf.trainable_variables()
                 num_of_vars = len(tf_vars)
