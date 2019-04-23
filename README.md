@@ -29,7 +29,7 @@ for some 0 <= τ <= 1.
 ## Training and playing:
 The `main.py` holds two functions:
 * `train()` will initiate a training process, and save the model under
-`models/q.ckpt`. Using the current settings, training took me less than 20 
+`models/q.ckpt`. Using the current settings, training took me around 60 
 minutes on a MacBook Pro (2018)
 * `play()` allows a human player to play against a saved model
 

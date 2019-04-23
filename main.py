@@ -7,26 +7,41 @@ import tensorflow as tf
 import players
 from game import Game
 
+# Default Q-Player settings
+layers_size = [100, 160, 160, 100]
+batch_size = 150
+batches_to_q_target_switch = 1000
+gamma = 0.95
+tau = 1
+memory_size = 100000
+learning_rate = 0.0001
+
 
 def train():
-    costs = []  # this will store the costs, so we can plot them later
-    r1 = []  # same, but for the players total rewards
-    r2 = []
     random.seed(int(time()*1000))
     tf.reset_default_graph()
-    logging.basicConfig(level=logging.WARN, format='%(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     # Initialize players
-    p1 = players.QPlayer([100,160,160,100],
-                         learning_batch_size=150, batches_to_q_target_switch=1000,
-                         gamma=0.95, tau=0.95, memory_size=100000)
-    p1.name = 'Q'
-    p2 = players.Novice()
-    p2.name = 'N'
+    with tf.Graph().as_default():
+        p1 = players.QPlayer(tf.Session(), hidden_layers_size=layers_size, learning_batch_size=batch_size, gamma=gamma,
+                             batches_to_q_target_switch=batches_to_q_target_switch, tau=tau, memory_size=memory_size,
+                             maximize_entropy=False)
+        p1.name = 'Q'
+
+    with tf.Graph().as_default():
+        p2 = players.QPlayer(tf.Session(), hidden_layers_size=layers_size, learning_batch_size=batch_size, gamma=gamma,
+                             batches_to_q_target_switch=batches_to_q_target_switch, tau=tau, memory_size=memory_size,
+                             maximize_entropy=True)
+        p2.name = 'E'
+
     total_rewards = {p1.name: 0, p2.name: 0}
+    costs = {p1.name: [], p2.name: []}  # this will store the costs, so we can plot them later
+    rewards = {p1.name: [], p2.name: []}  # same, but for the players total rewards
 
     # Start playing
-    num_of_games = 1500000
+    num_of_games = int(1e6)
+    train_start_time = time()
     for g in range(1,num_of_games+1):
         game = Game(p1,p2) if g%2==0 else Game(p2,p1)  # make sure both players play X and O
         last_phases = {p1.name: None, p2.name: None}  # will be used to store the last state a player was in
@@ -48,10 +63,10 @@ def train():
             if g <= num_of_games // 4:
                 max_eps = 0.6
             elif g <= num_of_games // 2:
-                max_eps = 0.01
+                max_eps = 0.1
             else:
-                max_eps = 0.001
-            min_eps = 0.01 if g <= num_of_games // 2 else 0.0
+                max_eps = 0.05
+            min_eps = 0.01
             eps = round(max(max_eps - round(g*(max_eps-min_eps)/num_of_games, 3), min_eps), 3)
 
             # Play and receive reward
@@ -73,11 +88,13 @@ def train():
                                                       'action': action,
                                                       'reward': r}
             total_rewards[game.active_player().name] += r
+            if r == game.winning_reward:
+                total_rewards[game.inactive_player().name] += game.losing_reward
 
             # Activate learning procedure
-            cost = game.active_player().learn(learning_rate=0.0001)
+            cost = game.active_player().learn(learning_rate=learning_rate)
             if cost is not None:
-                costs.append(cost)
+                costs[game.active_player().name].append(cost)
 
             # Next player's turn, if game hasn't ended
             if not game_over:
@@ -93,39 +110,69 @@ def train():
         memory_element = last_phases[game.inactive_player().name]
         memory_element['next_state'] = np.zeros(9)
         memory_element['game_over'] = True
-        memory_element['reward'] = game.losing_reward
+        memory_element['reward'] = game.losing_reward if r == game.winning_reward else game.tie_reward
         game.inactive_player().add_to_memory(memory_element)
 
         # Print statistics
-        if g % 100 == 0:
+        period = 100.0
+        if g % int(period) == 0:
             print('Game: {g} | Number of Trainings: {t} | Epsilon: {e} | Average Rewards - {p1}: {r1}, {p2}: {r2}'
-                  .format(g=g, p1=p1.name, r1=total_rewards[p1.name]/100.0,
-                          p2=p2.name, r2=total_rewards[p2.name]/100.0,
+                  .format(g=g, p1=p1.name, r1=total_rewards[p1.name]/period,
+                          p2=p2.name, r2=total_rewards[p2.name]/period,
                           t=len(costs), e=eps))
-            r1.append(total_rewards[p1.name]/100.0)
-            r2.append(total_rewards[p2.name]/100.0)
+            rewards[p1.name].append(total_rewards[p1.name]/period)
+            rewards[p2.name].append(total_rewards[p2.name]/period)
             total_rewards = {p1.name: 0, p2.name: 0}
 
     # Save trained model and shutdown Tensorflow sessions
-    p1.save('./models/q.ckpt')
+    training_time = time() - train_start_time
+    minutes = int(training_time // 60)
+    seconds = int(training_time % 60)
+    if seconds < 10:
+        seconds = '0{}'.format(seconds)
+    print('Training took {m}:{s} minutes'.format(m=minutes, s=seconds))
     for pp in [p1,p2]:
+        pp.save('./models/{}.ckpt'.format(pp.name))
         pp.shutdown()
 
     # Plot graphs
-    plt.scatter(range(len(costs)),costs)
-    plt.show()
-    plt.scatter(range(len(r1)),r1,c='g')
-    plt.show()
-    plt.scatter(range(len(r2)), r2, c='r')
-    plt.show()
+    cost_colors = {p1.name: 'b', p2.name: 'k'}
+    reward_colors = {p1.name: 'g', p2.name: 'r'}
+    for pp in [p1,p2]:
+        plt.scatter(range(len(costs[pp.name])), costs[pp.name], c=cost_colors[pp.name])
+        plt.title('Cost of player {}'.format(pp.name))
+        plt.show()
+        plt.scatter(range(len(rewards[pp.name])), rewards[pp.name], c=reward_colors[pp.name])
+        plt.title('Average rewards of player {}'.format(pp.name))
+        plt.show()
+
+        plt.scatter(range(len(costs[pp.name])), costs[pp.name], c=cost_colors[pp.name])
+        plt.title('Cost of player {} [0,1]'.format(pp.name))
+        plt.ylim(0,1)
+        plt.show()
+        plt.scatter(range(len(rewards[pp.name])), rewards[pp.name], c=reward_colors[pp.name])
+        plt.title('Average rewards of player {} [-1,1]'.format(pp.name))
+        plt.ylim(-1,1)
+        plt.show()
 
 
 def play():
     random.seed(int(time()))
-    p1 = players.QPlayer([100,160,160,100], learning_batch_size=100, gamma=0.95, tau=0.95,
-                         batches_to_q_target_switch=100, memory_size=100000)
-    p1.restore('./models/q.ckpt')
-    p2 = players.Human()
+
+    graph1 = tf.Graph()
+    with graph1.as_default():
+        p1 = players.QPlayer(hidden_layers_size=layers_size, learning_batch_size=batch_size, gamma=gamma, tau=tau,
+                             batches_to_q_target_switch=batches_to_q_target_switch, memory_size=memory_size,
+                             session=tf.Session(), maximize_entropy=False, var_scope_name='Q')
+        p1.restore('./models/q.ckpt')
+
+    graph2 = tf.Graph()
+    with graph2.as_default():
+        p2 = players.QPlayer(hidden_layers_size=layers_size, learning_batch_size=batch_size, gamma=gamma, tau=tau,
+                             batches_to_q_target_switch=batches_to_q_target_switch, memory_size=memory_size,
+                             session=tf.Session(), maximize_entropy=True, var_scope_name='E')
+        p2.restore('./models/e.ckpt')
+
     for g in range(4):
         print('STARTING NEW GAME (#{})\n-------------'.format(g))
         if g%2==0:
@@ -135,7 +182,7 @@ def play():
             game = Game(p2,p1)
             print("Computer is O (-1)")
         while not game.game_status()['game_over']:
-            if isinstance(game.active_player(), players.Human):
+            if True: #isinstance(game.active_player(), players.Human):
                 game.print_board()
                 print("{}'s turn:".format(game.current_player))
             state = np.copy(game.board)
@@ -148,3 +195,5 @@ def play():
         game.print_board()
         print(game.game_status())
         print('-------------')
+
+train()
