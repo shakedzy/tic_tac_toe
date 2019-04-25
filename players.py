@@ -23,6 +23,9 @@ class Player:
     def add_to_memory(self, add_this):
         pass
 
+    def save(self, filename):
+        pass
+
     @abstractmethod
     def select_cell(self, board, **kwargs):
         pass

@@ -8,8 +8,15 @@
  * Comprehend how to win a game
  * Block the opponent when poses a threat
  
- The agent is based on a [Double Deep Q-Network model](https://arxiv.org/abs/1509.02971v5), 
- and is implemented with Python 3 and Tensorflow.
+ 
+## Training:
+The ML code being used is imported from the [warehouse](https://github.com/shakedzy/warehouse) library I wrote. 
+The agent is based on a [Double Deep Q-Network model](https://arxiv.org/abs/1509.02971v5). 
+
+Two types of agents were trained: a regular DDQN agent, and another which learns using 
+[maximum entropy](https://bair.berkeley.edu/blog/2017/10/06/soft-q-learning/). They are named _'Q'_ and _'E'_ 
+respectively.  
+
 
 ## DDQN key formulas:
 The cost function used is:
@@ -26,16 +33,17 @@ The Q-Target update rule is:
 for some 0 <= τ <= 1.
 
 
-## Training and playing:
-The `main.py` holds two functions:
-* `train()` will initiate a training process, and save the model under
-`models/q.ckpt`. Using the current settings, training took me around 60 
-minutes on a MacBook Pro (2018)
-* `play()` allows a human player to play against a saved model
+## Do it yourself:
+The `main.py` holds several useful functions. See doc-strings for more details:
+* `train` will initiate a single training process. It will save the weights and plots graphs. 
+Using the current settings, training took me around 70 minutes on a 2018 MacBook Pro
+* `multi_train` will train several DDQN and DDQN-Max-Entropy models
+* `play` allows a human player to play against a saved model
+* `face_off` can be used to compare models by letting them play against each other
 
-### out-of-the-box model:
-`models/q.ckpt` is a model trained by me using the configurations
-in the code. 
+## Out-of-the-box models:
+The `models/` directory holds several trained models. _Q_ files refer to DDQN models and _E_ files refer to 
+DDQN-Max-Entropy models 
 
 ---------------------------
 

@@ -27,22 +27,24 @@ class Game:
         self.tie_reward = tie_reward
         self.reset()
 
-    def reset(self):
-        self.board = np.zeros(9)
-        self.current_player = 1
-        self._invalid_move_played = False
-
+    @property
     def active_player(self):
         if self.current_player == 1:
             return self.player1
         else:
             return self.player2
 
+    @property
     def inactive_player(self):
         if self.current_player == -1:
             return self.player1
         else:
             return self.player2
+
+    def reset(self):
+        self.board = np.zeros(9)
+        self.current_player = 1
+        self._invalid_move_played = False
 
     def play(self, cell):
         self._invalid_move_played = False
