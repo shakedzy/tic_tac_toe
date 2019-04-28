@@ -3,8 +3,8 @@ import logging
 import numpy as np
 import tensorflow as tf
 from abc import abstractmethod
-from warehouse.dqn import DeepQNetworkModel
-from warehouse.memory_buffers import ExperienceReplayMemory
+from gin.dqn import DeepQNetworkModel
+from gin.memory_buffers import ExperienceReplayMemory
 
 
 class Player:

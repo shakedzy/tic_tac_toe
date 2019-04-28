@@ -10,7 +10,7 @@
  
  
 ## Training:
-The ML code being used is imported from the [warehouse](https://github.com/shakedzy/warehouse) library I wrote. 
+The ML code being used is imported from the [gin](https://github.com/shakedzy/gin) library I wrote. 
 The agent is based on a [Double Deep Q-Network model](https://arxiv.org/abs/1509.02971v5). 
 
 Two types of agents were trained: a regular DDQN agent, and another which learns using 
