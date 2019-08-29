@@ -58,8 +58,6 @@ The `DeepQNetworkModel` class can be easily configured using these parameters (a
 
 See the class doc-string for all possible parameters.  
 
-## Out-of-the-box models:
-
 ---------------------------
 
 ### Related blogposts:
