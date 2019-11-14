@@ -10,31 +10,29 @@
  
 ## Key formulas of algorithms used: 
 ### Double Deep Q-Networks:
-Based on [this paper by Lillicrap _et al._](https://arxiv.org/abs/1509.02971) The cost function used is:
+Based on the DDQN algorithm by Van-Hasselt _et al._ [[1]](#ref1). The cost function used is:
 
 ![cost](images/ddqn_cost.png)
 
 Where θ represents the trained Q-Network and ϑ represents the semi-static Q-Target
 network.
 
-The Q-Target update rule is:
+The Q-Target update rule is based on the DDPG algorithm by Lillicrap _et al._ [[2]](#ref2) :
 
 ![update_rule](images/ddqn_update.png)
 
 for some 0 <= τ <= 1. 
 
 ### Maximum Entropy Learning:
-Based on [this paper by Haarnoja _et al_](https://arxiv.org/abs/1702.08165) and designed according to 
-[this blog-post by BAIR](https://bair.berkeley.edu/blog/2017/10/06/soft-q-learning/). 
+Based on a paper by Haarnoja _et al_.[[3]](#ref3) and designed according to 
+a blog-post by BAIR[[4]](#ref4). 
 Q-Values are computed using the Soft Bellman Equation:
 ![soft_bellman](images/soft_bellman.png) 
  
 ## Trained models:
 Two types of agents were trained: 
 * a regular DDQN agent
-* an agent which learns using 
-[maximum entropy](https://bair.berkeley.edu/blog/2017/10/06/soft-q-learning/). They are named _'Q'_ and _'E'_ 
-respectively.
+* an agent which learns using maximum entropy. They are named _'Q'_ and _'E'_ respectively.
  
 Both models use a cyclic memory buffer as their experience-replay memory.
 
@@ -63,3 +61,15 @@ See the class doc-string for all possible parameters.
 ### Related blogposts:
 * Read about where I got stuck when developing this code on "[Lessons Learned from Tic-Tac-Toe: Practical Reinforcement Learning Tips](https://medium.com/@shakedzy/lessons-learned-from-tic-tac-toe-practical-reinforcement-learning-tips-5cac654a45a8)"
 * Read about the _E_ Max-Entropy models on "[Open Minded AI: Improving Performance by Keeping All Options on the Table](https://medium.com/@shakedzy/open-minded-ai-improving-performance-by-keeping-all-options-on-the-table-ddefce50913a)"
+
+---------------------------
+
+### References:
+<a id="ref1"></a>
+1) Hado van Hasselt _et al._, [Deep Reinforcement Learning with Double Q-learning](https://arxiv.org/abs/1509.06461)
+<a id="ref2"></a>
+2) Lillicrap _et al._ , [Continuous control with deep reinforcement learning](https://arxiv.org/abs/1509.02971)
+<a id="ref3"></a>
+3) Haarnoja _et al._, [Reinforcement Learning with Deep Energy-Based Policies](https://arxiv.org/abs/1702.08165)
+<a id="ref4"></a>
+4) Tang & Haarnoja, [Learning Diverse Skills via Maximum Entropy Deep Reinforcement Learning](https://bair.berkeley.edu/blog/2017/10/06/soft-q-learning/) (blogpost)
